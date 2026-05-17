@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+vendor/
+
+# Build
+react-frontend/dist/
+
+# Environment
+.env
+laravel-backend/.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Laravel
+laravel-backend/storage/logs/*.log
+laravel-backend/bootstrap/cache/*.php
+
+# Backup
+_backup_custom/
+_laravel_temp/
