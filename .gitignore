@@ -21,7 +21,3 @@ Thumbs.db
 # Laravel
 laravel-backend/storage/logs/*.log
 laravel-backend/bootstrap/cache/*.php
-
-# Backup
-_backup_custom/
-_laravel_temp/

@@ -44,8 +44,7 @@ PROMPT;
 
     public function __construct()
     {
-        // Read directly from env to bypass Railway's build-time config cache
-        $this->groqApiKey = env('GROQ_API_KEY') ?: config('services.groq.api_key', '');
+        $this->groqApiKey = config('services.groq.api_key');
     }
 
     /**
