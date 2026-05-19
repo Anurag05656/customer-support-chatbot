@@ -227,6 +227,54 @@ export default function ChatWindow({ sessionId, theme, onToggleTheme }) {
     return d.toLocaleDateString([], { month: "short", day: "numeric" });
   };
 
+  const exportChat = () => {
+    if (!active || active.messages.length <= 1) return;
+
+    const time = (iso) =>
+      new Date(iso).toLocaleString([], {
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+
+    let text = `╔══════════════════════════════════════════╗\n`;
+    text += `║  AI Support Chat — Export                ║\n`;
+    text += `╚══════════════════════════════════════════╝\n\n`;
+    text += `Topic: ${active.title}\n`;
+    text += `Date : ${new Date(active.createdAt).toLocaleDateString()}\n`;
+    text += `Msgs : ${active.messages.length - 1}\n`;
+    text += `${'─'.repeat(45)}\n\n`;
+
+    active.messages.forEach((msg) => {
+      if (msg.id === "welcome") return;
+      const sender = msg.role === "user" ? "🧑 You" : "🤖 Bot";
+      text += `[${time(msg.timestamp)}] ${sender}\n`;
+      text += `${msg.content}\n`;
+      if (msg.sentiment) text += `  ↳ Sentiment: ${msg.sentiment}\n`;
+      if (msg.expertAnalysis) {
+        const ea = msg.expertAnalysis;
+        text += `  ↳ Expert: ${ea.intent} (${ea.confidence}% confidence, ${ea.priority} priority)\n`;
+        if (ea.rules_fired?.length) {
+          text += `  ↳ Rules : ${ea.rules_fired.join(", ")}\n`;
+        }
+      }
+      text += `\n`;
+    });
+
+    text += `${'─'.repeat(45)}\n`;
+    text += `Exported from AI Support Chatbot\n`;
+    text += `Powered by LLaMA 3 · Expert System · Sentiment Analysis\n`;
+
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `chat-${active.title.replace(/[^a-zA-Z0-9]/g, "_").slice(0, 30)}-${Date.now()}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="app-layout">
       {/* ── Sidebar ─────────────────────────── */}
@@ -355,6 +403,18 @@ export default function ChatWindow({ sessionId, theme, onToggleTheme }) {
             </div>
           </div>
           <div className="header-actions">
+            <button
+              className="icon-btn"
+              onClick={exportChat}
+              title="Export chat"
+              disabled={active.messages.length <= 1}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+            </button>
             <button className="icon-btn" onClick={handleNewChat} title="New conversation">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <line x1="12" y1="5" x2="12" y2="19" />
