@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Conversation;
+use App\Models\Message;
 use App\Services\ExpertSystem;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -16,7 +18,13 @@ class ChatController extends Controller
 
     private string $systemPrompt = <<<PROMPT
 You are a professional and empathetic customer support assistant.
-Your job is to help customers with their queries in a friendly, concise, and helpful manner.
+Your job is to help customers ONLY with support-related queries such as order tracking, refunds, account issues, billing, shipping, product questions, complaints, and escalations.
+
+SCOPE RESTRICTION (STRICTLY ENFORCED):
+- You must ONLY answer questions related to customer support topics.
+- If a customer asks a general knowledge question, trivia, coding help, math, science, history, or anything NOT related to customer support, politely decline and redirect them.
+- Example decline: "I appreciate your curiosity! However, I'm specifically designed to help with customer support topics like orders, refunds, account issues, and more. How can I help you with any of those?"
+- NEVER answer off-topic questions, even if you know the answer. Stay in your role.
 
 Guidelines:
 - Always be polite, patient, and understanding
@@ -53,9 +61,10 @@ PROMPT;
     public function chat(Request $request): JsonResponse
     {
         $request->validate([
-            'message'    => 'required|string|max:1000',
-            'session_id' => 'nullable|string|max:100',
-            'history'    => 'nullable|array|max:20',
+            'message'         => 'required|string|max:1000',
+            'session_id'      => 'nullable|string|max:100',
+            'conversation_id' => 'nullable|integer',
+            'history'         => 'nullable|array|max:20',
             'history.*.role'    => 'required_with:history|in:user,assistant',
             'history.*.content' => 'required_with:history|string|max:2000',
         ]);
@@ -72,8 +81,34 @@ PROMPT;
             $analysis['action']
         );
 
+        // ── Build conversation history ──────────────────
+        // Optionally resolve authenticated user from bearer token
+        $user = auth('sanctum')->user();
+        $conversation = null;
+        $historyForApi = $request->input('history', []);
+
+        // If authenticated and has conversation_id, load history from DB
+        if ($user && $request->input('conversation_id')) {
+            $conversation = $user->conversations()->find($request->input('conversation_id'));
+
+            if ($conversation) {
+                // Load last 10 messages from DB for context
+                $dbMessages = $conversation->messages()
+                    ->orderBy('created_at', 'desc')
+                    ->take(10)
+                    ->get()
+                    ->reverse()
+                    ->values();
+
+                $historyForApi = $dbMessages->map(fn($m) => [
+                    'role'    => $m->role,
+                    'content' => $m->content,
+                ])->toArray();
+            }
+        }
+
         $messages = $this->buildMessages(
-            $request->input('history', []),
+            $historyForApi,
             $request->input('message'),
             $expertContext
         );
@@ -107,11 +142,43 @@ PROMPT;
             $rawReply = $data['choices'][0]['message']['content'] ?? '{}';
             $parsed   = json_decode($rawReply, true) ?? [];
 
+            $replyText  = $parsed['reply'] ?? trim($rawReply);
+            $sentiment  = $parsed['sentiment'] ?? 'neutral';
+            $suggestions = $parsed['suggestions'] ?? [];
+
+            // ── Persist messages for authenticated users ─────
+            if ($user && $conversation) {
+                // Save user message
+                $conversation->messages()->create([
+                    'role'    => 'user',
+                    'content' => $request->input('message'),
+                ]);
+
+                // Save bot reply
+                $conversation->messages()->create([
+                    'role'            => 'assistant',
+                    'content'         => $replyText,
+                    'sentiment'       => $sentiment,
+                    'suggestions'     => $suggestions,
+                    'expert_analysis' => $analysis,
+                ]);
+
+                // Update conversation title from first user message
+                if ($conversation->title === 'New Chat') {
+                    $conversation->update([
+                        'title' => mb_substr($request->input('message'), 0, 60),
+                    ]);
+                }
+
+                $conversation->touch();
+            }
+
             return response()->json([
-                'reply'           => $parsed['reply'] ?? trim($rawReply),
-                'sentiment'       => $parsed['sentiment'] ?? 'neutral',
-                'suggestions'     => $parsed['suggestions'] ?? [],
+                'reply'           => $replyText,
+                'sentiment'       => $sentiment,
+                'suggestions'     => $suggestions,
                 'session_id'      => $request->input('session_id'),
+                'conversation_id' => $conversation?->id,
                 'tokens'          => $data['usage']['total_tokens'] ?? null,
                 'expert_analysis' => $analysis,
             ]);
